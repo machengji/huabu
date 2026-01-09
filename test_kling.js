@@ -1,0 +1,11 @@
+const crypto = require('crypto');
+const ak = 'ALMd9kbmLeMJT4PQKTn3PD8GAKeNNtGb';
+const sk = 'AKBrP4YmPrAf3d4aeLraFFKAQPMQ8rrR';
+const now = Math.floor(Date.now() / 1000);
+const header = { alg: 'HS256', typ: 'JWT' };
+const payload = { iss: ak, exp: now + 3600, iat: now };
+const base64Url = (obj) => Buffer.from(JSON.stringify(obj)).toString('base64').replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+const data = base64Url(header) + '.' + base64Url(payload);
+const signature = crypto.createHmac('sha256', sk).update(data).digest('base64url');
+const token = data + '.' + signature;
+console.log(token);

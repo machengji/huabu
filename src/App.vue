@@ -4,8 +4,7 @@
     <header class="top-header glass-panel">
       <div class="left-section">
         <div class="logo">
-          <div class="logo-icon"></div>
-          <span>AI Poster Studio</span>
+          <span>Poster Studio</span>
         </div>
       </div>
       
@@ -47,6 +46,11 @@
         :selected-object="selectedObject"
         @generate="handleGenerate"
         @update-property="handleUpdateProperty"
+        @update-object="handleUpdateObject"
+        @delete-object="handleDeleteObject"
+        @load-project="handleLoadProject"
+        @get-canvas-state="handleGetCanvasState"
+        @locate-object="handleLocateObject"
       />
 
       <!-- Floating Object Toolbar -->
@@ -63,6 +67,7 @@
       ref="fileInput" 
       style="display: none" 
       accept="image/*" 
+      multiple
       @change="handleImageUpload"
     >
   </div>
@@ -75,6 +80,10 @@ import ToolBar from './components/ToolBar.vue'
 import SidePanel from './components/SidePanel.vue'
 import CanvasEditor from './components/CanvasEditor.vue'
 import ObjectToolbar from './components/ObjectToolbar.vue'
+
+import { generateImage } from './services/minimax'
+import { generateImageKling } from './services/kling'
+import { generateImageLibLib } from './services/liblib'
 
 const isDark = ref(false)
 const zoom = ref(1)
@@ -115,14 +124,21 @@ const handleAction = (action) => {
   }
 }
 
-const handleImageUpload = (e) => {
-  const file = e.target.files[0]
-  if (file && canvasRef.value) {
-    const reader = new FileReader()
-    reader.onload = (f) => {
-      canvasRef.value.addImage(f.target.result)
+const handleImageUpload = async (e) => {
+  const files = Array.from(e.target.files)
+  if (files.length > 0 && canvasRef.value) {
+    for (const file of files) {
+      await new Promise((resolve) => {
+        const reader = new FileReader()
+        reader.onload = async (f) => {
+          // Use filename (without extension) as the object name
+          const name = file.name.replace(/\.[^/.]+$/, "")
+          await canvasRef.value.addImage(f.target.result, name)
+          resolve()
+        }
+        reader.readAsDataURL(file)
+      })
     }
-    reader.readAsDataURL(file)
   }
   // Reset input
   e.target.value = ''
@@ -132,15 +148,53 @@ const handleSelectionChange = (obj) => {
   selectedObject.value = obj
 }
 
-const handleGenerate = async (prompt) => {
+const handleGenerate = async ({ prompt, apiKey, secretKey, model }) => {
   if (canvasRef.value) {
-    await canvasRef.value.generatePoster(prompt)
+    try {
+      isInteracting.value = true
+      let imageUrl
+      
+      if (model === 'minimax') {
+        imageUrl = await generateImage(prompt, apiKey)
+      } else if (model === 'kling') {
+        imageUrl = await generateImageKling(prompt, apiKey, secretKey, (status) => {
+          console.log('Kling Status:', status)
+        })
+      } else if (model === 'liblib') {
+        imageUrl = await generateImageLibLib(prompt, apiKey, secretKey, (status) => {
+          console.log('LibLib Status:', status)
+        })
+      }
+      
+      if (imageUrl) {
+        // Use truncated prompt as name for AI images
+        const aiName = `AI: ${prompt.slice(0, 8)}...`
+        await canvasRef.value.addImage(imageUrl, aiName)
+      }
+    } catch (error) {
+      console.error('AI Generation Error:', error)
+      alert(`生成失败: ${error.message}`)
+    } finally {
+      isInteracting.value = false
+    }
   }
 }
 
 const handleUpdateProperty = ({ key, value }) => {
   if (canvasRef.value) {
     canvasRef.value.updateSelectedObject(key, value)
+  }
+}
+
+const handleUpdateObject = ({ obj, key, value }) => {
+  if (canvasRef.value) {
+    canvasRef.value.updateObject(obj, key, value)
+  }
+}
+
+const handleDeleteObject = (obj) => {
+  if (canvasRef.value) {
+    canvasRef.value.removeObject(obj)
   }
 }
 
@@ -153,13 +207,42 @@ const handleExport = () => {
     link.click()
   }
 }
+
 const handleObjectAction = (action) => {
   console.log('Object action:', action)
-  // Implement specific actions like remove-bg, upscale etc.
   if (action === 'download') {
     handleExport()
+  } else if (action === 'delete') {
+    canvasRef.value.deleteSelectedObject()
+  } else if (action === 'rename') {
+    const oldName = selectedObject.value.name || '未命名元素'
+    const newName = window.prompt('修改元素名称', oldName)
+    if (newName && newName !== oldName) {
+      canvasRef.value.updateSelectedObject('name', newName)
+      // Force update selectedObject to refresh UI
+      selectedObject.value = { ...selectedObject.value, name: newName }
+    }
   } else {
     alert(`功能 [${action}] 正在集成中...`)
+  }
+}
+
+const handleLoadProject = async (json) => {
+  if (canvasRef.value) {
+    await canvasRef.value.loadFromJSON(json)
+  }
+}
+
+const handleGetCanvasState = (callback) => {
+  if (canvasRef.value) {
+    const state = canvasRef.value.getCanvasState()
+    callback(state)
+  }
+}
+
+const handleLocateObject = (obj) => {
+  if (canvasRef.value) {
+    canvasRef.value.locateObject(obj)
   }
 }
 </script>
@@ -195,13 +278,6 @@ const handleObjectAction = (action) => {
   font-weight: 800;
   font-family: 'Outfit', sans-serif;
   font-size: 1.2rem;
-}
-
-.logo-icon {
-  width: 32px;
-  height: 32px;
-  background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
-  border-radius: 8px;
 }
 
 .zoom-controls {

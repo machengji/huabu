@@ -1,44 +1,60 @@
 <template>
   <div 
-    v-if="selectedObject && isImage" 
+    v-if="selectedObject" 
     class="object-toolbar glass-panel"
     :style="toolbarStyle"
   >
-    <button class="tool-item" @click="$emit('action', 'upscale')">
-      <Maximize2 :size="16" />
-      <span>放大</span>
-    </button>
-    <button class="tool-item" @click="$emit('action', 'remove-bg')">
-      <Eraser :size="16" />
-      <span>移除背景</span>
-    </button>
-    <button class="tool-item" @click="$emit('action', 'mockup')">
-      <Shirt :size="16" />
-      <span>Mockup</span>
-    </button>
-    <button class="tool-item" @click="$emit('action', 'erase')">
-      <Brush :size="16" />
-      <span>擦除</span>
-    </button>
-    <button class="tool-item" @click="$emit('action', 'edit-element')">
-      <Layers :size="16" />
-      <span>编辑元素</span>
-    </button>
-    <button class="tool-item" @click="$emit('action', 'edit-text')">
+    <template v-if="isImage">
+      <button class="tool-item" @click="$emit('action', 'upscale')">
+        <Maximize2 :size="16" />
+        <span>放大</span>
+      </button>
+      <button class="tool-item" @click="$emit('action', 'remove-bg')">
+        <Eraser :size="16" />
+        <span>移除背景</span>
+      </button>
+      <button class="tool-item" @click="$emit('action', 'mockup')">
+        <Shirt :size="16" />
+        <span>Mockup</span>
+      </button>
+      <button class="tool-item" @click="$emit('action', 'erase')">
+        <Brush :size="16" />
+        <span>擦除</span>
+      </button>
+      <button class="tool-item" @click="$emit('action', 'edit-element')">
+        <Layers :size="16" />
+        <span>编辑元素</span>
+      </button>
+      <button class="tool-item" @click="$emit('action', 'expand')">
+        <Expand :size="16" />
+        <span>扩展</span>
+      </button>
+      <div class="divider"></div>
+    </template>
+
+    <button v-if="selectedObject.type === 'textbox'" class="tool-item" @click="$emit('action', 'edit-text')">
       <Type :size="16" />
       <span>编辑文字</span>
       <span class="badge">New</span>
     </button>
-    <button class="tool-item" @click="$emit('action', 'expand')">
-      <Expand :size="16" />
-      <span>扩展</span>
+
+    <button 
+      v-if="selectedObject.type !== 'activeSelection'" 
+      class="tool-item icon-only" 
+      @click="$emit('action', 'download')"
+    >
+      <Download :size="16" />
+    </button>
+    <button 
+      v-if="selectedObject.type !== 'activeSelection'" 
+      class="tool-item icon-only" 
+      @click="$emit('action', 'rename')"
+    >
+      <Edit3 :size="16" />
     </button>
     <div class="divider"></div>
-    <button class="tool-item icon-only">
-      <MoreHorizontal :size="16" />
-    </button>
-    <button class="tool-item icon-only" @click="$emit('action', 'download')">
-      <Download :size="16" />
+    <button class="tool-item icon-only danger" @click="$emit('action', 'delete')">
+      <Trash2 :size="16" />
     </button>
   </div>
 </template>
@@ -47,7 +63,7 @@
 import { computed } from 'vue'
 import { 
   Maximize2, Eraser, Shirt, Brush, Layers, 
-  Type, Expand, MoreHorizontal, Download 
+  Type, Expand, MoreHorizontal, Download, Trash2, Edit3 
 } from 'lucide-vue-next'
 
 const props = defineProps({
@@ -76,10 +92,12 @@ const toolbarStyle = computed(() => {
   const top = boundingRect.top * zoom + vpt[5]
   const width = boundingRect.width * zoom
   
+  const bottom = (boundingRect.top + boundingRect.height) * zoom + vpt[5]
+  
   return {
     left: `${left + width / 2}px`,
-    top: `${top - 20}px`,
-    transform: 'translate(-50%, -100%)'
+    top: `${bottom + 40}px`,
+    transform: 'translate(-50%, 0)'
   }
 })
 </script>
@@ -128,6 +146,11 @@ const toolbarStyle = computed(() => {
 
 .tool-item.icon-only {
   padding: 6px;
+}
+
+.tool-item.danger:hover {
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
 }
 
 .divider {
