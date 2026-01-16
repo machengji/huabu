@@ -10,6 +10,11 @@ export default defineConfig({
         }
     },
     server: {
+        fs: {
+            strict: false,
+            allow: ['..']
+        },
+        host: '0.0.0.0',
         proxy: {
             '/api/kling': {
                 target: 'https://api-beijing.klingai.com',
