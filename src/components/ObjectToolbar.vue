@@ -63,7 +63,7 @@
 import { computed } from 'vue'
 import { 
   Maximize2, Eraser, Shirt, Brush, Layers, 
-  Type, Expand, MoreHorizontal, Download, Trash2, Edit3 
+  Type, Expand, MoreHorizontal, Download, Trash2, Edit3, RotateCw 
 } from 'lucide-vue-next'
 
 const props = defineProps({
@@ -78,10 +78,24 @@ const isImage = computed(() => {
 })
 
 const toolbarStyle = computed(() => {
+  if (!props.selectedObject || !props.canvas) return {}
+  
+  // Get object position in canvas coordinates
+  const obj = props.selectedObject
+  const boundingRect = obj.getBoundingRect()
+  
+  // Convert to viewport coordinates
+  const zoom = props.canvas.getZoom()
+  const vpt = props.canvas.viewportTransform
+  
+  const left = boundingRect.left * zoom + vpt[4]
+  const top = boundingRect.top * zoom + vpt[5]
+  const width = boundingRect.width * zoom
+  
   return {
-    top: '20px',
-    left: '50%',
-    transform: 'translateX(-50%)'
+    left: `${left + width / 2}px`,
+    top: `${top - 65}px`,
+    transform: 'translate(-50%, 0)'
   }
 })
 </script>

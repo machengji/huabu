@@ -66,10 +66,96 @@ onMounted(() => {
     borderScaleFactor: 2
   })
 
-  // Hide rotation control globally
+  // Hide default rotation control globally
   if (fabric.Object.prototype.controls && fabric.Object.prototype.controls.mtr) {
     delete fabric.Object.prototype.controls.mtr
   }
+
+  // Define a custom rotation cursor
+  const rotateCursor = 'crosshair'
+
+  // Custom rotation handler (fallback if fabric.controlsUtils is missing)
+  const customRotateHandler = (eventData, transform, x, y) => {
+    // Try to use Fabric's built-in handler first if available
+    if (fabric.controlsUtils && fabric.controlsUtils.rotationWithSnapping) {
+      return fabric.controlsUtils.rotationWithSnapping(eventData, transform, x, y);
+    }
+    // Fallback implementation
+    const target = transform.target;
+    const canvas = target.canvas;
+    const center = target.getCenterPoint();
+    const pointer = canvas.getPointer(eventData);
+    const radians = Math.atan2(pointer.y - center.y, pointer.x - center.x);
+    let degrees = (radians * 180) / Math.PI;
+    
+    // Adjust based on which corner we are pulling (approximate)
+    // This assumes the user grabs the handle relative to center
+    // Ideally we want relative rotation, but absolute is easier for fallback
+    degrees += 90; // Adjust for typical coordinate system alignment
+
+    if (eventData.shiftKey) {
+      degrees = Math.round(degrees / 15) * 15;
+    }
+    target.angle = degrees;
+    return true;
+  }
+
+  // Create a helper to generate rotation controls
+  const createRotateControl = (x, y, offsetX, offsetY) => {
+    return new fabric.Control({
+      x, y, offsetX, offsetY,
+      actionHandler: customRotateHandler,
+      cursorStyle: rotateCursor,
+      actionName: 'rotate',
+      render: () => {}, // Invisible (Photoshop style) - just changes cursor
+      cornerSize: 30, // Large hit area to ensure it catches the mouse easily
+      withConnection: false
+    })
+  }
+
+  // Function to apply controls to an object
+  const applyCustomControls = (obj) => {
+    if (!obj) return;
+    
+    // Ensure controls object exists
+    if (!obj.controls) {
+      obj.controls = fabric.Object.prototype.controls ? { ...fabric.Object.prototype.controls } : {};
+    }
+
+    // Add/Overwrite rotation controls
+    // Adjusted offsets to be closer to the corner for seamless transition from resize to rotate
+    obj.controls.rotate_tl = createRotateControl(-0.5, -0.5, -15, -15);
+    obj.controls.rotate_tr = createRotateControl(0.5, -0.5, 15, -15);
+    obj.controls.rotate_bl = createRotateControl(-0.5, 0.5, -15, 15);
+    obj.controls.rotate_br = createRotateControl(0.5, 0.5, 15, 15);
+    
+    // Hide default mtr
+    delete obj.controls.mtr;
+    
+    obj.setCoords();
+  };
+
+  // Apply to prototype as well for new objects
+  if (fabric.Object.prototype.controls) {
+     fabric.Object.prototype.controls.rotate_tl = createRotateControl(-0.5, -0.5, -15, -15);
+     fabric.Object.prototype.controls.rotate_tr = createRotateControl(0.5, -0.5, 15, -15);
+     fabric.Object.prototype.controls.rotate_bl = createRotateControl(-0.5, 0.5, -15, 15);
+     fabric.Object.prototype.controls.rotate_br = createRotateControl(0.5, 0.5, 15, 15);
+     delete fabric.Object.prototype.controls.mtr;
+  }
+
+  canvas.on('object:added', (e) => {
+    if (e.target) {
+      applyCustomControls(e.target);
+    }
+  })
+
+  // Re-apply on selection just in case
+  canvas.on('selection:created', (e) => {
+    if (e.selected) {
+      e.selected.forEach(applyCustomControls);
+    }
+  })
 
   // Helper to hide rotation on an object
   const hideRotation = (obj) => {
@@ -320,6 +406,61 @@ const locateObject = (obj) => {
   canvas.renderAll()
 }
 
+const rotateSelectedObject = (angle = 90) => {
+  if (!canvas) return
+  const activeObj = canvas.getActiveObject()
+  if (activeObj) {
+    const currentAngle = activeObj.angle || 0
+    activeObj.rotate((currentAngle + angle) % 360)
+    canvas.requestRenderAll()
+    emit('selection-change', activeObj)
+  }
+}
+
+const startRotatingObject = (e) => {
+  if (!canvas) return
+  const activeObj = canvas.getActiveObject()
+  if (!activeObj) return
+
+  // 获取物体中心点在屏幕上的坐标
+  const center = activeObj.getCenterPoint()
+  const zoom = canvas.getZoom()
+  const vpt = canvas.viewportTransform
+  const screenCenter = {
+    x: center.x * zoom + vpt[4],
+    y: center.y * zoom + vpt[5]
+  }
+
+  // 计算初始角度
+  const startAngle = activeObj.angle || 0
+  const startMouseAngle = Math.atan2(e.clientY - screenCenter.y, e.clientX - screenCenter.x)
+
+  const onMouseMove = (moveEvent) => {
+    const currentMouseAngle = Math.atan2(moveEvent.clientY - screenCenter.y, moveEvent.clientX - screenCenter.x)
+    const deltaAngle = (currentMouseAngle - startMouseAngle) * (180 / Math.PI)
+    
+    // 按住 Shift 键时进行 15 度吸附
+    let newAngle = (startAngle + deltaAngle) % 360
+    if (moveEvent.shiftKey) {
+      newAngle = Math.round(newAngle / 15) * 15
+    }
+    
+    activeObj.rotate(newAngle)
+    canvas.requestRenderAll()
+    emit('selection-change', activeObj)
+  }
+
+  const onMouseUp = () => {
+    window.removeEventListener('mousemove', onMouseMove)
+    window.removeEventListener('mouseup', onMouseUp)
+    emit('interaction-end')
+  }
+
+  window.addEventListener('mousemove', onMouseMove)
+  window.addEventListener('mouseup', onMouseUp)
+  emit('interaction-start')
+}
+
 const removeObject = (obj) => {
   if (!canvas || !obj) return
   
@@ -361,7 +502,7 @@ const loadFromJSON = async (json) => {
 
 defineExpose({
   addToolElement, generatePoster: () => {}, updateSelectedObject, addImage, exportCanvas,
-  getCanvasInstance, getCanvasState, loadFromJSON, deleteSelectedObject, locateObject, updateObject, removeObject
+  getCanvasInstance, getCanvasState, loadFromJSON, deleteSelectedObject, locateObject, updateObject, removeObject, rotateSelectedObject, startRotatingObject
 })
 </script>
 

@@ -52,10 +52,11 @@
 
       <!-- Floating Object Toolbar -->
       <ObjectToolbar 
-        v-if="selectedObject"
+        v-if="selectedObject && !isInteracting"
         :selected-object="selectedObject"
         :canvas="canvasRef?.getCanvasInstance()"
         @action="handleObjectAction"
+        @rotate-start="e => canvasRef.value.startRotatingObject(e)"
       />
       
       <!-- AI Panel (Floating) -->
@@ -211,6 +212,8 @@ const handleObjectAction = (action) => {
   console.log('Object action:', action)
   if (action === 'download') {
     handleExport()
+  } else if (action === 'rotate') {
+    canvasRef.value.rotateSelectedObject(90)
   } else if (action === 'delete') {
     canvasRef.value.deleteSelectedObject()
   } else if (action === 'rename') {
