@@ -47,6 +47,7 @@
           @zoom-change="zoom = $event"
           @interaction-start="isInteracting = true"
           @interaction-end="isInteracting = false"
+          @content-change="handleContentChange"
         />
       </div>
 
@@ -73,6 +74,7 @@
       @load-project="handleLoadProject"
       @get-canvas-state="handleGetCanvasState"
       @new-project="handleNewProject"
+      @logout="handleLogout"
     />
 
     <!-- Hidden File Input for Image Upload -->
@@ -84,6 +86,8 @@
       multiple
       @change="handleImageUpload"
     >
+    
+    <LoginModal v-if="showLogin" @success="handleLoginSuccess" />
   </div>
 </template>
 
@@ -95,10 +99,13 @@ import CanvasEditor from './components/CanvasEditor.vue'
 import ObjectToolbar from './components/ObjectToolbar.vue'
 import ProjectManager from './components/ProjectManager.vue'
 import AIPanel from './components/AIPanel.vue'
+import LoginModal from './components/LoginModal.vue'
 
 import { generateImage } from './services/minimax'
 import { generateImageKling } from './services/kling'
 import { generateImageLibLib } from './services/liblib'
+import { saveProject, getCurrentUser, createEmptyProject } from './services/leancloud'
+import { saveLocalProject } from './services/localProjects'
 
 const isDark = ref(false)
 const zoom = ref(1)
@@ -109,6 +116,33 @@ const isInteracting = ref(false)
 
 const showProjectManager = ref(false)
 const showAIPanel = ref(false)
+const showLogin = ref(false)
+const currentProject = ref(null)
+
+onMounted(async () => {
+    const user = getCurrentUser()
+    if (!user) {
+        showLogin.value = true
+    } else {
+        await initNewProjectSession()
+    }
+})
+
+const handleLoginSuccess = async () => {
+    showLogin.value = false
+    await initNewProjectSession()
+}
+
+const handleLogout = () => {
+    currentProject.value = null
+    if (canvasRef.value) canvasRef.value.clearCanvas()
+    showProjectManager.value = false
+    showLogin.value = true
+}
+
+const initNewProjectSession = async () => {
+    showProjectManager.value = true
+}
 
 const zoomIn = () => { zoom.value = Math.min(zoom.value + 0.1, 3) }
 const zoomOut = () => { zoom.value = Math.max(zoom.value - 0.1, 0.1) }
@@ -229,9 +263,54 @@ const handleObjectAction = (action) => {
   }
 }
 
-const handleLoadProject = async (json) => {
+const handleLoadProject = async (data) => {
+  // Support both old format (direct json) and new format (object)
+  const json = data.json || data
   if (canvasRef.value) {
     await canvasRef.value.loadFromJSON(json)
+    
+    // Set current project context for auto-save
+    if (data.projectId) {
+        currentProject.value = {
+            projectId: data.projectId,
+            name: data.name,
+            isLocal: !!data.isLocal
+        }
+        console.log('Project loaded:', currentProject.value.name)
+    }
+  }
+}
+
+const handleContentChange = async (state) => {
+  // console.log('App received content-change. Current Project:', currentProject.value)
+  
+  // If no project is active, create one automatically on first edit
+  if (!currentProject.value || !currentProject.value.projectId) {
+      console.log('No active project. Auto-creating new cloud project for these changes...')
+      try {
+          const project = await createEmptyProject()
+          currentProject.value = {
+              projectId: project.id,
+              name: project.name,
+              isLocal: false
+          }
+      } catch (e) {
+          console.error('Failed to auto-create project:', e)
+          return
+      }
+  }
+
+  // Auto-save logic
+  try {
+    if (currentProject.value.isLocal) {
+        saveLocalProject(currentProject.value.name, state.json, state.thumbnail)
+    } else {
+        // Cloud Save
+        await saveProject(currentProject.value.name, state.json, state.thumbnail, currentProject.value.projectId)
+    }
+    // console.log('Auto-saved')
+  } catch (error) {
+    console.error('Auto-save failed:', error)
   }
 }
 
@@ -242,9 +321,42 @@ const handleGetCanvasState = (callback) => {
   }
 }
 
-const handleNewProject = () => {
+const handleNewProject = async () => {
     if(canvasRef.value) {
+        // 1. Force save current project if exists
+        if (currentProject.value && currentProject.value.projectId) {
+            console.log('Switching projects: Force saving current project...')
+            try {
+                // Access component method directly
+                const state = canvasRef.value.getCanvasState()
+                if (state) {
+                    await saveProject(
+                        currentProject.value.name, 
+                        state.json, 
+                        state.thumbnail, 
+                        currentProject.value.projectId
+                    )
+                    console.log('Previous project saved.')
+                }
+            } catch (e) {
+                console.error('Failed to save previous project before new:', e)
+            }
+        }
+
+        // 2. Clear and Create New
         canvasRef.value.clearCanvas()
+        
+        try {
+            const project = await createEmptyProject()
+            currentProject.value = {
+                projectId: project.id,
+                name: project.name,
+                isLocal: false
+            }
+            console.log('New cloud project created:', project.name)
+        } catch (e) {
+            console.error('Failed to init cloud project:', e)
+        }
     }
 }
 </script>

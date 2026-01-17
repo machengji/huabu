@@ -7,6 +7,7 @@
 <script setup>
 import { ref, onMounted, watch, onUnmounted } from 'vue'
 import * as fabric from 'fabric'
+import { uploadFile } from '../services/leancloud'
 
 const props = defineProps({
   zoom: {
@@ -15,11 +16,20 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['selection-change', 'zoom-change', 'interaction-start', 'interaction-end'])
+const emit = defineEmits(['selection-change', 'zoom-change', 'interaction-start', 'interaction-end', 'content-change'])
 
 const canvasEl = ref(null)
 const wrapper = ref(null)
 let canvas = null
+
+// Debounce helper
+const debounce = (fn, delay) => {
+  let timeout
+  return (...args) => {
+    clearTimeout(timeout)
+    timeout = setTimeout(() => fn(...args), delay)
+  }
+}
 
 const deleteSelectedObject = () => {
   if (!canvas) return
@@ -349,6 +359,20 @@ onMounted(() => {
   })
   // -----------------------------------------------------------------------
 
+  // --- Auto-Save (Content Change) Listener ---
+  const handleModification = debounce(() => {
+    console.log('Canvas modified, emitting content-change...')
+    const state = getCanvasState()
+    if (state) {
+      emit('content-change', state)
+    }
+  }, 2000)
+
+  canvas.on('object:modified', handleModification)
+  canvas.on('object:added', handleModification)
+  canvas.on('object:removed', handleModification)
+  // -------------------------------------------
+
   // Interaction events
   canvas.on('object:moving', () => emit('interaction-start'))
   canvas.on('object:scaling', () => emit('interaction-start'))
@@ -397,6 +421,29 @@ onMounted(() => {
 
   window.addEventListener('keydown', handleKeyDown)
   window.addEventListener('keyup', handleKeyUp)
+
+  // Drag and Drop Support
+  const handleDrop = (e) => {
+    e.preventDefault()
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      const files = Array.from(e.dataTransfer.files)
+      files.forEach(file => {
+        if (file.type.startsWith('image/')) {
+          const reader = new FileReader()
+          reader.onload = (f) => {
+             // Pass Data URL to addImage, which will handle cloud upload
+             addImage(f.target.result, file.name)
+          }
+          reader.readAsDataURL(file)
+        }
+      })
+    }
+  }
+  
+  if (wrapper.value) {
+      wrapper.value.addEventListener('drop', handleDrop)
+      wrapper.value.addEventListener('dragover', (e) => e.preventDefault())
+  }
 
   canvas.on('mouse:down', (opt) => {
     if (isSpacePressed) {
@@ -508,8 +555,27 @@ let lastPlacedRect = null
 const addImage = async (url, customName = null) => {
   if (!canvas) return
   try {
-    const isDataUrl = url.startsWith('data:')
-    const img = await fabric.FabricImage.fromURL(url, { crossOrigin: isDataUrl ? null : 'anonymous' })
+    let finalUrl = url
+    
+    // Auto-upload to Cloud if it's a local Data URI or Blob URL
+    if (typeof url === 'string' && (url.startsWith('data:') || url.startsWith('blob:'))) {
+        try {
+            // Convert to Blob
+            const res = await fetch(url)
+            const blob = await res.blob()
+            const ext = blob.type.split('/')[1] || 'png'
+            const filename = `img_${Date.now()}.${ext}`
+            
+            // Upload to LeanCloud
+            finalUrl = await uploadFile(filename, blob)
+            console.log('Image uploaded to cloud:', finalUrl)
+        } catch (err) {
+            console.error('Failed to upload image to cloud, using local URL:', err)
+        }
+    }
+
+    const isDataUrl = finalUrl.startsWith('data:')
+    const img = await fabric.FabricImage.fromURL(finalUrl, { crossOrigin: isDataUrl ? null : 'anonymous' })
     const targetWidth = 200
     const scale = targetWidth / img.width
     const scaledWidth = targetWidth
@@ -663,9 +729,21 @@ const loadFromJSON = async (json) => {
   } catch (e) { console.error('Failed to load project:', e) }
 }
 
+const clearCanvas = () => {
+  if (canvas) {
+    canvas.clear()
+    // Fabric.js v6+: use property assignment
+    canvas.backgroundColor = 'transparent'
+    canvas.renderAll()
+    imageCounter = 1
+    lastPlacedRect = null
+    emit('selection-change', null)
+  }
+}
+
 defineExpose({
   addToolElement, generatePoster: () => {}, updateSelectedObject, addImage, exportCanvas,
-  getCanvasInstance, getCanvasState, loadFromJSON, deleteSelectedObject, locateObject, updateObject, removeObject, rotateSelectedObject, startRotatingObject
+  getCanvasInstance, getCanvasState, loadFromJSON, deleteSelectedObject, locateObject, updateObject, removeObject, rotateSelectedObject, startRotatingObject, clearCanvas
 })
 </script>
 

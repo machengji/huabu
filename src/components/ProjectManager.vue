@@ -6,9 +6,16 @@
           <FolderOpen :size="24" />
           <h2>我的项目</h2>
         </div>
-        <button class="close-btn" @click="$emit('close')">
-          <X :size="24" />
-        </button>
+        <div class="header-actions" style="display: flex; align-items: center; gap: 12px;">
+            <span v-if="username" style="font-size: 0.9rem; color: #64748b; font-weight: 500;">{{ username }}</span>
+            <button class="text-btn" @click="handleLogout" title="退出登录" style="color: #ef4444;">
+                <LogOut :size="18" />
+                退出
+            </button>
+            <button class="close-btn" @click="$emit('close')">
+              <X :size="24" />
+            </button>
+        </div>
       </div>
 
       <div class="modal-body">
@@ -17,28 +24,6 @@
             <Plus :size="18" />
             保存当前项目
           </button>
-          
-           <!-- Bmob Settings Trigger -->
-           <button class="text-btn" @click="showSettings = !showSettings">
-            <Settings :size="16" />
-            {{ showSettings ? '隐藏配置' : '配置云端存储' }}
-           </button>
-        </div>
-
-         <!-- Settings Section -->
-        <div v-if="showSettings" class="settings-section">
-          <div class="setting-group">
-            <label>Bmob Application ID</label>
-            <input type="password" v-model="bmobAppId" placeholder="App ID">
-          </div>
-          <div class="setting-group">
-            <label>Bmob REST API Key</label>
-            <input type="password" v-model="bmobRestKey" placeholder="REST API Key">
-          </div>
-          <div class="setting-group">
-             <label>Bmob Safe Token (可选)</label>
-             <input type="password" v-model="bmobSafeToken" placeholder="Safe Token">
-          </div>
         </div>
 
         <div class="projects-grid">
@@ -78,46 +63,39 @@
 
 <script setup>
 import { ref, onMounted, watch } from 'vue'
-import { FolderOpen, Plus, Play, Trash2, X, Settings, FilePlus } from 'lucide-vue-next'
-import { initBmob, loadFullProject } from '../services/bmob'
-import { getLocalProjects, saveLocalProject, deleteLocalProject } from '../services/localProjects'
+import { FolderOpen, Plus, Play, Trash2, X, Settings, FilePlus, LogOut } from 'lucide-vue-next'
+import { loadFullProject, logOut, getCurrentUser, getProjects, deleteProject } from '../services/leancloud'
 
-const emit = defineEmits(['close', 'load-project', 'get-canvas-state', 'new-project'])
+const emit = defineEmits(['close', 'load-project', 'get-canvas-state', 'new-project', 'logout'])
 
 const projects = ref([])
 const showSettings = ref(false)
-const bmobAppId = ref('')
-const bmobRestKey = ref('')
-const bmobSafeToken = ref('')
+const username = ref('')
 
 onMounted(() => {
-  bmobAppId.value = localStorage.getItem('bmob_app_id') || ''
-  bmobRestKey.value = localStorage.getItem('bmob_rest_key') || ''
-  bmobSafeToken.value = localStorage.getItem('bmob_safe_token') || ''
-  
+  const user = getCurrentUser()
+  if (user) username.value = user.getUsername()
   loadProjectsList()
 })
 
-watch(bmobAppId, (val) => {
-  localStorage.setItem('bmob_app_id', val)
-  if (val && bmobRestKey.value) initBmob(val, bmobRestKey.value, bmobSafeToken.value)
-})
-watch(bmobRestKey, (val) => {
-  localStorage.setItem('bmob_rest_key', val)
-  if (bmobAppId.value && val) initBmob(bmobAppId.value, val, bmobSafeToken.value)
-})
-watch(bmobSafeToken, (val) => localStorage.setItem('bmob_safe_token', val))
+const handleLogout = async () => {
+  if (confirm('确定要退出登录吗？')) {
+    await logOut()
+    emit('logout')
+  }
+}
 
-const loadProjectsList = () => {
-  projects.value = getLocalProjects()
+const loadProjectsList = async () => {
+  try {
+      const cloudProjects = await getProjects()
+      projects.value = cloudProjects
+  } catch (e) {
+      console.error('Failed to load projects:', e)
+  }
 }
 
 const formatThumbnail = (url) => {
-  if (!url) return '' // Return default placeholder if needed
-  if (typeof url === 'string' && url.includes('b0.upaiyun.com')) {
-    return url.replace(/https?:\/\/[^\/]+/, '/api/bmob-cdn')
-  }
-  return url
+  return url || ''
 }
 
 const formatDate = (dateStr) => {
@@ -149,24 +127,33 @@ const handleLoadProject = async (project) => {
       json = await loadFullProject(project)
     }
     
-    emit('load-project', json)
+    // Emit project metadata for auto-save context
+    emit('load-project', { 
+        json, 
+        projectId: project.objectId || project.id, 
+        name: project.name,
+        isLocal: !!project.isLocal 
+    })
     emit('close')
   } catch (error) {
     alert('加载失败: ' + error.message)
   }
 }
 
-const handleDeleteProject = (id) => {
+const handleDeleteProject = async (id) => {
   if (!confirm('确定要删除这个项目吗？')) return
-  deleteLocalProject(id)
-  loadProjectsList()
+  try {
+    await deleteProject(id)
+    await loadProjectsList()
+  } catch (error) {
+    alert('删除失败: ' + error.message)
+  }
 }
 
 const handleNewProject = () => {
-    if(confirm('确定要新建项目吗？当前未保存的内容将丢失。')) {
-        emit('new-project')
-        emit('close')
-    }
+    // Directly create new project without confirmation (App.vue handles auto-save)
+    emit('new-project')
+    emit('close')
 }
 </script>
 

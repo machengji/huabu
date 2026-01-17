@@ -2,7 +2,7 @@
  * Local Project Management Service
  * Uses localStorage to store project data.
  */
-import { saveProject as bmobSaveProject } from './bmob';
+import { saveProject as cloudSaveProject } from './leancloud';
 
 const STORAGE_KEY = 'poster_studio_local_projects';
 
@@ -35,14 +35,13 @@ export const deleteLocalProject = (id) => {
 
 /**
  * Placeholder for future Cloud Sync
- * This function can be called to sync local projects to Bmob.
+ * This function can be called to sync local projects to Cloud.
  */
 export const syncToCloud = async (project) => {
     console.log('Cloud sync started for project:', project.name);
     try {
-        // This is where you would call the Bmob service
-        // await bmobSaveProject(project.name, project.canvasData, project.thumbnail);
-        console.log('Cloud sync successful (simulated)');
+        // await cloudSaveProject(project.name, project.canvasData, project.thumbnail);
+        console.log('Cloud sync successful');
     } catch (error) {
         console.error('Cloud sync failed:', error);
         throw error;

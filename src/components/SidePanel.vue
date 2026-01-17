@@ -36,11 +36,12 @@
           <option value="minimax">MiniMax (image-01)</option>
           <option value="kling">Kling AI (kling-v1)</option>
           <option value="liblib">LibLibAI (Star-3)</option>
-          <option value="bmob">Bmob (项目云存储)</option>
+          <!-- LeanCloud is built-in, no key required from user -->
+          <!-- <option value="leancloud">LeanCloud (云同步)</option> -->
         </select>
       </div>
       
-      <div v-if="selectedModel !== 'bmob'" class="api-key-group">
+      <div v-if="selectedModel !== 'leancloud'" class="api-key-group">
         <label>
           {{ selectedModel === 'minimax' ? 'MiniMax API Key' : 
              selectedModel === 'kling' ? 'Kling Access Key' : 'LibLib Access Key' }}
@@ -64,44 +65,6 @@
             type="password" 
             v-model="secretKey" 
             placeholder="输入您的 Secret Key"
-            class="api-input"
-          >
-        </div>
-      </div>
-
-      <!-- Bmob Settings -->
-      <div v-if="selectedModel === 'bmob'" class="api-key-group">
-        <label>Bmob Application ID</label>
-        <div class="input-with-icon">
-          <Key :size="14" class="input-icon" />
-          <input 
-            type="password" 
-            v-model="bmobAppId" 
-            placeholder="输入您的 Application ID"
-            class="api-input"
-          >
-        </div>
-      </div>
-      <div v-if="selectedModel === 'bmob'" class="api-key-group">
-        <label>Bmob REST API Key</label>
-        <div class="input-with-icon">
-          <Key :size="14" class="input-icon" />
-          <input 
-            type="password" 
-            v-model="bmobRestKey" 
-            placeholder="输入您的 REST API Key"
-            class="api-input"
-          >
-        </div>
-      </div>
-      <div v-if="selectedModel === 'bmob'" class="api-key-group">
-        <label>Bmob Safe Token (可选)</label>
-        <div class="input-with-icon">
-          <Key :size="14" class="input-icon" />
-          <input 
-            type="password" 
-            v-model="bmobSafeToken" 
-            placeholder="若开启安全模式请填写"
             class="api-input"
           >
         </div>
@@ -298,8 +261,8 @@
 <script setup>
 import { ref, computed, watch, onMounted, toRaw } from 'vue'
 import { Sparkles, Send, Settings, Key, FolderOpen, Plus, Play, Trash2, Image, Square, Type } from 'lucide-vue-next'
-import { initBmob, saveProject, getProjects, deleteProject, loadFullProject } from '../services/bmob'
-import { getLocalProjects, saveLocalProject, deleteLocalProject, syncToCloud } from '../services/localProjects'
+import { saveProject, getProjects, deleteProject, loadFullProject } from '../services/leancloud'
+import { getLocalProjects, saveLocalProject, deleteLocalProject } from '../services/localProjects'
 
 const props = defineProps({
   selectedObject: Object
@@ -374,9 +337,6 @@ const klingKey = ref('')
 const klingSecretKey = ref('')
 const liblibKey = ref('')
 const liblibSecretKey = ref('')
-const bmobAppId = ref('')
-const bmobRestKey = ref('')
-const bmobSafeToken = ref('')
 
 const projects = ref([])
 
@@ -412,15 +372,10 @@ onMounted(async () => {
   klingSecretKey.value = localStorage.getItem('kling_secret_key') || ''
   liblibKey.value = localStorage.getItem('liblib_api_key') || ''
   liblibSecretKey.value = localStorage.getItem('liblib_secret_key') || ''
-  bmobAppId.value = localStorage.getItem('bmob_app_id') || ''
-  bmobRestKey.value = localStorage.getItem('bmob_rest_key') || ''
-  bmobSafeToken.value = localStorage.getItem('bmob_safe_token') || ''
   selectedModel.value = localStorage.getItem('selected_model') || 'minimax'
   
-  if (bmobAppId.value && bmobRestKey.value) {
-    initBmob(bmobAppId.value, bmobRestKey.value, bmobSafeToken.value)
-    loadProjectsList()
-  }
+  // Load cloud projects on mount (if applicable)
+  loadProjectsList()
 })
 
 watch(minimaxKey, (val) => localStorage.setItem('minimax_api_key', val))
@@ -430,28 +385,6 @@ watch(liblibKey, (val) => localStorage.setItem('liblib_api_key', val))
 watch(liblibSecretKey, (val) => localStorage.setItem('liblib_secret_key', val))
 watch(activeTab, (val) => {
   if (val === 'projects') loadProjectsList()
-})
-
-watch(bmobAppId, (val) => {
-  localStorage.setItem('bmob_app_id', val)
-  if (val && bmobRestKey.value) {
-    initBmob(val, bmobRestKey.value, bmobSafeToken.value)
-    loadProjectsList()
-  }
-})
-watch(bmobRestKey, (val) => {
-  localStorage.setItem('bmob_rest_key', val)
-  if (bmobAppId.value && val) {
-    initBmob(bmobAppId.value, val, bmobSafeToken.value)
-    loadProjectsList()
-  }
-})
-watch(bmobSafeToken, (val) => {
-  localStorage.setItem('bmob_safe_token', val)
-  if (bmobAppId.value && bmobRestKey.value) {
-    initBmob(bmobAppId.value, bmobRestKey.value, val)
-    loadProjectsList()
-  }
 })
 watch(selectedModel, (val) => localStorage.setItem('selected_model', val))
 
@@ -504,39 +437,31 @@ const updateColor = (e) => {
 }
 
 const formatThumbnail = (url) => {
-  if (!url) return ''
-  if (typeof url === 'string' && url.includes('b0.upaiyun.com')) {
-    return url.replace(/https?:\/\/[^\/]+/, '/api/bmob-cdn')
-  }
-  return url
+  return url || ''
 }
 
 // Project Methods
 const loadProjectsList = async () => {
-  // Use local projects by default
-  projects.value = getLocalProjects()
+  // Use local projects as cache/fallback
+  const local = getLocalProjects()
+  projects.value = local
   
-  // Optional: Load from Bmob if configured (keeping the logic for future)
-  /*
+  // Load from LeanCloud
   try {
-    if (bmobAppId.value && bmobRestKey.value) {
-      const cloudProjects = await getProjects()
-      // Merge or handle cloud projects here
+    const cloudProjects = await getProjects()
+    if (cloudProjects && cloudProjects.length > 0) {
+      // Simple merge: cloud projects override local ones if needed, or just list them
+      // Currently, we just replace the list with cloud projects for the full experience
+      // or we can indicate which are local only.
+      // For now, let's prioritize cloud projects.
+      projects.value = cloudProjects
     }
   } catch (error) {
     console.error('加载云端项目失败:', error)
   }
-  */
 }
 
 const handleSaveProject = async () => {
-  if (!bmobAppId.value || !bmobRestKey.value) {
-    selectedModel.value = 'bmob'
-    showSettings.value = true
-    alert('请先配置 Bmob 凭据')
-    return
-  }
-
   const name = window.prompt('请输入项目名称', `未命名项目 ${new Date().toLocaleDateString()}`)
   if (!name) return
 
@@ -544,17 +469,18 @@ const handleSaveProject = async () => {
   emit('get-canvas-state', async (state) => {
     try {
       isGenerating.value = true
-      statusText.value = '正在保存到本地...'
+      statusText.value = '正在同步到云端...'
       
-      // Save locally
+      // Save locally first
       saveLocalProject(name, state.json, state.thumbnail)
       
-      // Placeholder for cloud sync
-      // await syncToCloud({ name, canvasData: state.json, thumbnail: state.thumbnail })
+      // Sync to LeanCloud
+      await saveProject(name, state.json, state.thumbnail)
       
       await loadProjectsList()
-      alert('已保存到本地！')
+      alert('已保存并同步到云端！')
     } catch (error) {
+      console.error(error)
       alert('保存失败: ' + error.message)
     } finally {
       isGenerating.value = false
@@ -568,14 +494,8 @@ const handleLoadProject = async (project) => {
     isGenerating.value = true
     statusText.value = '正在加载设计...'
     
-    let json
-    if (project.isLocal) {
-      // Local storage: direct parsing
-      json = typeof project.canvasData === 'string' ? JSON.parse(project.canvasData) : project.canvasData
-    } else {
-      // Cloud storage: fetch from URL via bmob service
-      json = await loadFullProject(project)
-    }
+    // Always use loadFullProject which handles cloud fetching
+    const json = await loadFullProject(project)
     
     if (json) {
       // Allow UI to update before heavy loading
@@ -595,10 +515,14 @@ const handleLoadProject = async (project) => {
 const handleDeleteProject = async (id) => {
   if (!confirm('确定要删除这个项目吗？')) return
   try {
+    // Delete local
     deleteLocalProject(id)
-    // Future: deleteProject(id) // Cloud delete
+    // Delete cloud
+    await deleteProject(id)
+    
     await loadProjectsList()
   } catch (error) {
+    console.error(error)
     alert('删除失败: ' + error.message)
   }
 }
