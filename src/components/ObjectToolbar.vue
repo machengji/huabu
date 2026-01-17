@@ -78,26 +78,10 @@ const isImage = computed(() => {
 })
 
 const toolbarStyle = computed(() => {
-  if (!props.selectedObject || !props.canvas) return {}
-  
-  // Get object position in canvas coordinates
-  const obj = props.selectedObject
-  const boundingRect = obj.getBoundingRect()
-  
-  // Convert to viewport coordinates
-  const zoom = props.canvas.getZoom()
-  const vpt = props.canvas.viewportTransform
-  
-  const left = boundingRect.left * zoom + vpt[4]
-  const top = boundingRect.top * zoom + vpt[5]
-  const width = boundingRect.width * zoom
-  
-  const bottom = (boundingRect.top + boundingRect.height) * zoom + vpt[5]
-  
   return {
-    left: `${left + width / 2}px`,
-    top: `${bottom + 40}px`,
-    transform: 'translate(-50%, 0)'
+    top: '20px',
+    left: '50%',
+    transform: 'translateX(-50%)'
   }
 })
 </script>

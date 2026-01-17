@@ -62,14 +62,19 @@ onMounted(() => {
     cornerStyle: 'circle',
     borderDashArray: [3, 3],
     padding: 0,
-    hasRotatingPoint: true,
+    hasRotatingPoint: false,
     borderScaleFactor: 2
   })
 
-  // Ensure rotation control is at the top
+  // Hide rotation control globally
   if (fabric.Object.prototype.controls && fabric.Object.prototype.controls.mtr) {
-    fabric.Object.prototype.controls.mtr.y = -0.5
-    fabric.Object.prototype.controls.mtr.offsetY = -40
+    delete fabric.Object.prototype.controls.mtr
+  }
+
+  // Helper to hide rotation on an object
+  const hideRotation = (obj) => {
+    obj.setControlVisible('mtr', false)
+    obj.set('hasRotatingPoint', false)
   }
 
   canvas.on('object:added', (e) => {
@@ -81,8 +86,10 @@ onMounted(() => {
         cornerSize: 12,
         cornerStyle: 'circle',
         transparentCorners: false,
-        hasRotatingPoint: true
+        hasRotatingPoint: false
       })
+      // Reliably hide the rotation control
+      e.target.setControlVisible('mtr', false)
     }
   })
 

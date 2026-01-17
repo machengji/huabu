@@ -6,6 +6,15 @@
         <div class="logo">
           <span>Poster Studio</span>
         </div>
+        <div class="header-divider"></div>
+        <button class="nav-btn" @click="showProjectManager = true">
+          <FolderOpen :size="18" />
+          <span>我的项目</span>
+        </button>
+        <button class="nav-btn" @click="showAIPanel = !showAIPanel" :class="{ active: showAIPanel }">
+          <Sparkles :size="18" />
+          <span>AI 助手</span>
+        </button>
       </div>
       
       <div class="center-section">
@@ -41,26 +50,30 @@
         />
       </div>
 
-      <!-- Right Side Panel -->
-      <SidePanel 
-        :selected-object="selectedObject"
-        @generate="handleGenerate"
-        @update-property="handleUpdateProperty"
-        @update-object="handleUpdateObject"
-        @delete-object="handleDeleteObject"
-        @load-project="handleLoadProject"
-        @get-canvas-state="handleGetCanvasState"
-        @locate-object="handleLocateObject"
-      />
-
       <!-- Floating Object Toolbar -->
       <ObjectToolbar 
-        v-if="selectedObject && !isInteracting"
+        v-if="selectedObject"
         :selected-object="selectedObject"
         :canvas="canvasRef?.getCanvasInstance()"
         @action="handleObjectAction"
       />
+      
+      <!-- AI Panel (Floating) -->
+      <AIPanel 
+        v-model="showAIPanel"
+        @generate="handleGenerate"
+      />
     </div>
+
+    <!-- Project Manager Modal -->
+    <ProjectManager 
+      v-if="showProjectManager"
+      @close="showProjectManager = false"
+      @load-project="handleLoadProject"
+      @get-canvas-state="handleGetCanvasState"
+      @new-project="handleNewProject"
+    />
+
     <!-- Hidden File Input for Image Upload -->
     <input 
       type="file" 
@@ -75,11 +88,12 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import { Sun, Moon } from 'lucide-vue-next'
+import { Sun, Moon, FolderOpen, Sparkles } from 'lucide-vue-next'
 import ToolBar from './components/ToolBar.vue'
-import SidePanel from './components/SidePanel.vue'
 import CanvasEditor from './components/CanvasEditor.vue'
 import ObjectToolbar from './components/ObjectToolbar.vue'
+import ProjectManager from './components/ProjectManager.vue'
+import AIPanel from './components/AIPanel.vue'
 
 import { generateImage } from './services/minimax'
 import { generateImageKling } from './services/kling'
@@ -91,6 +105,9 @@ const canvasRef = ref(null)
 const selectedObject = ref(null)
 const fileInput = ref(null)
 const isInteracting = ref(false)
+
+const showProjectManager = ref(false)
+const showAIPanel = ref(false)
 
 const zoomIn = () => { zoom.value = Math.min(zoom.value + 0.1, 3) }
 const zoomOut = () => { zoom.value = Math.max(zoom.value - 0.1, 0.1) }
@@ -111,7 +128,7 @@ const handleAction = (action) => {
         fileInput.value.click()
         break
       case 'ai-canvas':
-        alert('智能画板功能：AI 将根据当前画布内容生成新的创意元素')
+        showAIPanel.value = true
         break
       case 'export':
         handleExport()
@@ -180,24 +197,6 @@ const handleGenerate = async ({ prompt, apiKey, secretKey, model }) => {
   }
 }
 
-const handleUpdateProperty = ({ key, value }) => {
-  if (canvasRef.value) {
-    canvasRef.value.updateSelectedObject(key, value)
-  }
-}
-
-const handleUpdateObject = ({ obj, key, value }) => {
-  if (canvasRef.value) {
-    canvasRef.value.updateObject(obj, key, value)
-  }
-}
-
-const handleDeleteObject = (obj) => {
-  if (canvasRef.value) {
-    canvasRef.value.removeObject(obj)
-  }
-}
-
 const handleExport = () => {
   if (canvasRef.value) {
     const dataUrl = canvasRef.value.exportCanvas()
@@ -240,10 +239,10 @@ const handleGetCanvasState = (callback) => {
   }
 }
 
-const handleLocateObject = (obj) => {
-  if (canvasRef.value) {
-    canvasRef.value.locateObject(obj)
-  }
+const handleNewProject = () => {
+    if(canvasRef.value) {
+        canvasRef.value.clearCanvas()
+    }
 }
 </script>
 
@@ -278,6 +277,47 @@ const handleLocateObject = (obj) => {
   font-weight: 800;
   font-family: 'Outfit', sans-serif;
   font-size: 1.2rem;
+  color: #3b82f6;
+}
+
+.left-section {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.header-divider {
+    width: 1px;
+    height: 24px;
+    background: rgba(0,0,0,0.1);
+}
+
+.dark .header-divider {
+    background: rgba(255,255,255,0.1);
+}
+
+.nav-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: none;
+    border: none;
+    padding: 8px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    color: #64748b;
+    font-weight: 600;
+    transition: all 0.2s;
+}
+
+.nav-btn:hover, .nav-btn.active {
+    background: rgba(0,0,0,0.05);
+    color: #1e293b;
+}
+
+.dark .nav-btn:hover, .dark .nav-btn.active {
+    background: rgba(255,255,255,0.1);
+    color: #f8fafc;
 }
 
 .zoom-controls {
@@ -367,3 +407,4 @@ const handleLocateObject = (obj) => {
   gap: 16px;
 }
 </style>
+
