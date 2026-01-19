@@ -806,7 +806,50 @@ const loadFromJSON = async (json) => {
     }
     
     // 重新应用所有对象的控制点
-    canvas.getObjects().forEach(applyCustomControls)
+    canvas.getObjects().forEach(obj => {
+      // 这里的 applyCustomControls 是在 onMounted 中定义的局部函数
+      // 为了让 loadFromJSON 能访问到它，我们需要调整作用域或直接在内部定义
+      if (obj.name !== 'temp_spinner') {
+        const rotateCursor = 'crosshair'
+        const customRotateHandler = (eventData, transform, x, y) => {
+          if (fabric.controlsUtils && fabric.controlsUtils.rotationWithSnapping) {
+            return fabric.controlsUtils.rotationWithSnapping(eventData, transform, x, y);
+          }
+          const target = transform.target;
+          const canvas = target.canvas;
+          const center = target.getCenterPoint();
+          const pointer = canvas.getPointer(eventData);
+          const radians = Math.atan2(pointer.y - center.y, pointer.x - center.x);
+          let degrees = (radians * 180) / Math.PI;
+          degrees += 90;
+          if (eventData.shiftKey) degrees = Math.round(degrees / 15) * 15;
+          target.angle = degrees;
+          return true;
+        }
+
+        const createRotateControl = (x, y, offsetX, offsetY) => {
+          return new fabric.Control({
+            x, y, offsetX, offsetY,
+            actionHandler: customRotateHandler,
+            cursorStyle: rotateCursor,
+            actionName: 'rotate',
+            render: () => {},
+            cornerSize: 30,
+            withConnection: false
+          })
+        }
+
+        if (!obj.controls) {
+          obj.controls = fabric.Object.prototype.controls ? { ...fabric.Object.prototype.controls } : {};
+        }
+        obj.controls.rotate_tl = createRotateControl(-0.5, -0.5, -15, -15);
+        obj.controls.rotate_tr = createRotateControl(0.5, -0.5, 15, -15);
+        obj.controls.rotate_bl = createRotateControl(-0.5, 0.5, -15, 15);
+        obj.controls.rotate_br = createRotateControl(0.5, 0.5, 15, 15);
+        delete obj.controls.mtr;
+        obj.setCoords();
+      }
+    })
     
     canvas.renderAll()
   } catch (e) { 
