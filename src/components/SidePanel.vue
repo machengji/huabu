@@ -191,7 +191,7 @@
           </button>
 
           <div class="projects-grid">
-            <div v-for="project in projects" :key="project.objectId" class="project-card">
+            <div v-for="project in projects" :key="project.id" class="project-card">
               <div class="project-thumb" @click="handleLoadProject(project)">
                 <img :src="formatThumbnail(project.thumbnail)" alt="thumbnail">
                 <div class="project-overlay">
@@ -200,7 +200,7 @@
               </div>
               <div class="project-info">
                 <span class="project-name">{{ project.name }}</span>
-                <button class="delete-project-btn" @click="handleDeleteProject(project.objectId)">
+                <button class="delete-project-btn" @click="handleDeleteProject(project.id)">
                   <Trash2 :size="14" />
                 </button>
               </div>
