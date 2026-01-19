@@ -526,52 +526,116 @@ let lastPlacedRect = null
 
 const addImage = async (url, customName = null) => {
   if (!canvas) return
-  try {
-    let finalUrl = url
-    
-    // Auto-upload to Cloud if it's a local Data URI or Blob URL
-    if (typeof url === 'string' && (url.startsWith('data:') || url.startsWith('blob:'))) {
-        try {
-            // Convert to Blob
-            const res = await fetch(url)
-            const blob = await res.blob()
-            const ext = blob.type.split('/')[1] || 'png'
-            const filename = `img_${Date.now()}.${ext}`
-            
-            // Upload to LeanCloud
-            finalUrl = await uploadFile(filename, blob)
-            console.log('Image uploaded to cloud:', finalUrl)
-        } catch (err) {
-            console.error('Failed to upload image to cloud, using local URL:', err)
-        }
-    }
-
-    const isDataUrl = finalUrl.startsWith('data:')
-    const img = await fabric.FabricImage.fromURL(finalUrl, { crossOrigin: isDataUrl ? null : 'anonymous' })
-    const targetWidth = 200
-    const scale = targetWidth / img.width
-    const scaledWidth = targetWidth
-    const scaledHeight = img.height * scale
+  
+  // 1. 创建占位骨架屏 (Loading Placeholder)
+  const targetWidth = 200
+    const placeholderHeight = 150 // 默认高度
     let posX = canvas.width / 2, posY = canvas.height / 2
+    
+    // 如果有最后放置的位置，则偏移放置
     if (lastPlacedRect) {
-      posX = lastPlacedRect.left + lastPlacedRect.width / 2 + scaledWidth / 2 + 20
-      posY = lastPlacedRect.top
-      if (posX + scaledWidth / 2 > canvas.width - 50) {
+      posX = lastPlacedRect.left + 20
+      posY = lastPlacedRect.top + 20
+      if (posX + targetWidth / 2 > canvas.width - 50) {
         posX = canvas.width / 2
-        posY = lastPlacedRect.top + lastPlacedRect.height / 2 + scaledHeight / 2 + 20
+        posY = canvas.height / 2
       }
     }
+
+    // 使用 Rect 作为骨架图
+    const skeleton = new fabric.Rect({
+      left: posX,
+      top: posY,
+      width: targetWidth,
+      height: placeholderHeight,
+      fill: '#f1f5f9',
+      stroke: '#e2e8f0',
+      strokeWidth: 1,
+      rx: 8,
+      ry: 8,
+      originX: 'center',
+      originY: 'center',
+      name: '正在加载...',
+      selectable: false, // 加载中不可选中
+      evented: false    // 不响应事件
+    })
     
-    // Use custom name if provided, otherwise default to "图片 X"
-    const name = customName || `图片 ${imageCounter++}`
+    // 添加一个简单的呼吸动画效果
+    const animateSkeleton = () => {
+      if (!skeleton.canvas) return
+      skeleton.animate({ opacity: skeleton.opacity === 0.5 ? 1 : 0.5 }, {
+        duration: 800,
+        onChange: () => canvas.requestRenderAll(),
+        onComplete: animateSkeleton
+      })
+    }
     
-    img.set({ left: posX, top: posY, originX: 'center', originY: 'center', scaleX: scale, scaleY: scale, name })
-    lastPlacedRect = { left: posX, top: posY, width: scaledWidth, height: scaledHeight }
-    canvas.add(img)
-    canvas.setActiveObject(img)
-    canvas.renderAll()
-  } catch (e) { console.error('Failed to add image', e) }
-}
+    canvas.add(skeleton)
+    canvas.requestRenderAll()
+    animateSkeleton()
+
+    try {
+      console.log('Starting image upload/load for:', url.substring(0, 50) + '...')
+      let finalUrl = url
+      
+      // Auto-upload to Cloud if it's a local Data URI or Blob URL
+      if (typeof url === 'string' && (url.startsWith('data:') || url.startsWith('blob:'))) {
+          try {
+              const res = await fetch(url)
+              const blob = await res.blob()
+              const ext = blob.type.split('/')[1] || 'png'
+              const filename = `img_${Date.now()}.${ext}`
+              finalUrl = await uploadFile(filename, blob)
+              console.log('Upload success, final URL:', finalUrl)
+          } catch (err) {
+              console.error('Failed to upload image to cloud, using local URL:', err)
+          }
+      }
+
+      console.log('Loading image from URL:', finalUrl)
+      const isDataUrl = finalUrl.startsWith('data:')
+      const img = await fabric.FabricImage.fromURL(finalUrl, { 
+        crossOrigin: isDataUrl ? null : 'anonymous' 
+      })
+      console.log('Image loaded successfully:', img.width, 'x', img.height)
+      
+      const scale = targetWidth / img.width
+      const scaledWidth = targetWidth
+      const scaledHeight = img.height * scale
+      
+      // 使用预设的名字
+      const name = customName || `图片 ${imageCounter++}`
+      
+      img.set({ 
+        left: skeleton.left, 
+        top: skeleton.top, 
+        originX: 'center', 
+        originY: 'center', 
+        scaleX: scale, 
+        scaleY: scale, 
+        name,
+        opacity: 0 // 先透明，淡入显示
+      })
+
+      // 替换骨架屏
+      canvas.remove(skeleton)
+      canvas.add(img)
+      canvas.setActiveObject(img)
+      
+      // 淡入动画
+      img.animate({ opacity: 1 }, {
+        duration: 300,
+        onChange: () => canvas.requestRenderAll()
+      })
+
+      lastPlacedRect = { left: img.left, top: img.top, width: scaledWidth, height: scaledHeight }
+      canvas.requestRenderAll()
+    } catch (e) { 
+      console.error('Failed to add image', e)
+      canvas.remove(skeleton)
+      canvas.requestRenderAll()
+    }
+  }
 
 const exportCanvas = () => canvas ? canvas.toDataURL({ format: 'png', quality: 1 }) : ''
 const getCanvasInstance = () => canvas
