@@ -196,8 +196,8 @@ onMounted(() => {
   canvas.on('selection:updated', () => emit('selection-change', canvas.getActiveObject()))
   canvas.on('selection:cleared', () => emit('selection-change', null))
 
-  // --- Advanced Smart Alignment Guides (Canvas Center + Object-to-Object) ---
-  const guidelineOffset = 5 // Snapping threshold
+  // --- 稳定版吸附逻辑 ---
+  const guidelineOffset = 10
   const guidelines = []
 
   const clearGuidelines = () => {
@@ -213,147 +213,119 @@ onMounted(() => {
       evented: false,
       strokeDashArray: [4, 4],
       opacity: 0.8,
-      originX: 'center',
-      originY: 'center',
       excludeFromExport: true
     })
     canvas.add(line)
     guidelines.push(line)
   }
 
-  canvas.on('object:moving', (e) => {
-    const activeObj = e.target
+  canvas.on('object:moving', (options) => {
+    const activeObj = options.target
     if (!activeObj) return
 
     clearGuidelines()
     
+    // 禁用移动时的边框显示以减少视觉干扰
+    activeObj.set({
+      hasControls: false,
+      hasBorders: false
+    })
+
     const canvasWidth = canvas.width
     const canvasHeight = canvas.height
     
-    // Get active object dimensions and coordinates
-    // Note: getBoundingRect() returns coordinates relative to canvas (taking zoom into account if viewportTransform is standard, but usually it's better to work with aCoords for rotated objects. For simplicity, we assume non-rotated snapping or use center/size)
-    // Actually, getBoundingRect(true) gives absolute coordinates.
-    const activeRect = activeObj.getBoundingRect(true) 
+    // 关键修复点 1：使用 aCoords 获取物体顶点的精确画布坐标
+    // getBoundingRect 包含旋转后的整体包围盒，在吸附时会产生偏移和数学舍入误差
+    activeObj.setCoords()
+    const aCoords = activeObj.aCoords
+    const activeRect = {
+      left: Math.min(aCoords.tl.x, aCoords.tr.x, aCoords.bl.x, aCoords.br.x),
+      top: Math.min(aCoords.tl.y, aCoords.tr.y, aCoords.bl.y, aCoords.br.y),
+      width: Math.max(aCoords.tl.x, aCoords.tr.x, aCoords.bl.x, aCoords.br.x) - Math.min(aCoords.tl.x, aCoords.tr.x, aCoords.bl.x, aCoords.br.x),
+      height: Math.max(aCoords.tl.y, aCoords.tr.y, aCoords.bl.y, aCoords.br.y) - Math.min(aCoords.tl.y, aCoords.tr.y, aCoords.bl.y, aCoords.br.y)
+    }
     const activeCenterX = activeRect.left + activeRect.width / 2
     const activeCenterY = activeRect.top + activeRect.height / 2
-    
-    // Potential snap positions
-    let snapX = null
-    let snapY = null
-    
-    // 1. Snap to Canvas Center
-    if (Math.abs(activeCenterX - canvasWidth / 2) < guidelineOffset) {
-      snapX = canvasWidth / 2
-      drawGuide(canvasWidth / 2, 0, canvasWidth / 2, canvasHeight)
-    }
-    if (Math.abs(activeCenterY - canvasHeight / 2) < guidelineOffset) {
-      snapY = canvasHeight / 2
-      drawGuide(0, canvasHeight / 2, canvasWidth, canvasHeight / 2)
-    }
 
-    // 2. Snap to Other Objects
-    const objects = canvas.getObjects()
-    
-    // Helper to check horizontal snap (Vertical lines)
-    // pos: value to check, guidePos: value to snap to, startY/endY: line drawing extent
-    const checkVerticalSnap = (pos, guidePos, startY, endY) => {
-      if (Math.abs(pos - guidePos) < guidelineOffset) {
-        snapX = snapX === null ? guidePos : snapX // Prefer canvas center if conflict, or first match
-        // Adjust the line length to cover both objects
-        const minY = Math.min(activeRect.top, startY)
-        const maxY = Math.max(activeRect.top + activeRect.height, endY)
-        drawGuide(guidePos, minY, guidePos, maxY)
-        return true
-      }
-      return false
-    }
+    // 收集所有潜在的对齐目标点
+    const xTargets = [canvasWidth / 2]
+    const yTargets = [canvasHeight / 2]
 
-    // Helper to check vertical snap (Horizontal lines)
-    const checkHorizontalSnap = (pos, guidePos, startX, endX) => {
-      if (Math.abs(pos - guidePos) < guidelineOffset) {
-        snapY = snapY === null ? guidePos : snapY
-        const minX = Math.min(activeRect.left, startX)
-        const maxX = Math.max(activeRect.left + activeRect.width, endX)
-        drawGuide(minX, guidePos, maxX, guidePos)
-        return true
-      }
-      return false
-    }
-
-    objects.forEach(obj => {
-      if (obj === activeObj || obj.excludeFromExport) return // Skip self and guides
-
-      const rect = obj.getBoundingRect(true)
-      const centerX = rect.left + rect.width / 2
-      const centerY = rect.top + rect.height / 2
-
-      // --- Vertical Lines (Align X) ---
-      // Active Left vs Obj Left/Right/Center
-      if (!snapX) {
-        checkVerticalSnap(activeRect.left, rect.left, rect.top, rect.top + rect.height) ||
-        checkVerticalSnap(activeRect.left, rect.left + rect.width, rect.top, rect.top + rect.height) ||
-        checkVerticalSnap(activeRect.left, centerX, rect.top, rect.top + rect.height)
-      }
-      // Active Right vs Obj Left/Right/Center
-      if (!snapX) {
-        checkVerticalSnap(activeRect.left + activeRect.width, rect.left, rect.top, rect.top + rect.height) ||
-        checkVerticalSnap(activeRect.left + activeRect.width, rect.left + rect.width, rect.top, rect.top + rect.height) ||
-        checkVerticalSnap(activeRect.left + activeRect.width, centerX, rect.top, rect.top + rect.height)
-      }
-      // Active Center vs Obj Left/Right/Center
-      if (!snapX) {
-        checkVerticalSnap(activeCenterX, rect.left, rect.top, rect.top + rect.height) ||
-        checkVerticalSnap(activeCenterX, rect.left + rect.width, rect.top, rect.top + rect.height) ||
-        checkVerticalSnap(activeCenterX, centerX, rect.top, rect.top + rect.height)
-      }
-
-      // --- Horizontal Lines (Align Y) ---
-      // Active Top vs Obj Top/Bottom/Center
-      if (!snapY) {
-        checkHorizontalSnap(activeRect.top, rect.top, rect.left, rect.left + rect.width) ||
-        checkHorizontalSnap(activeRect.top, rect.top + rect.height, rect.left, rect.left + rect.width) ||
-        checkHorizontalSnap(activeRect.top, centerY, rect.left, rect.left + rect.width)
-      }
-      // Active Bottom vs Obj Top/Bottom/Center
-      if (!snapY) {
-        checkHorizontalSnap(activeRect.top + activeRect.height, rect.top, rect.left, rect.left + rect.width) ||
-        checkHorizontalSnap(activeRect.top + activeRect.height, rect.top + rect.height, rect.left, rect.left + rect.width) ||
-        checkHorizontalSnap(activeRect.top + activeRect.height, centerY, rect.left, rect.left + rect.width)
-      }
-      // Active Center vs Obj Top/Bottom/Center
-      if (!snapY) {
-        checkHorizontalSnap(activeCenterY, rect.top, rect.left, rect.left + rect.width) ||
-        checkHorizontalSnap(activeCenterY, rect.top + rect.height, rect.left, rect.left + rect.width) ||
-        checkHorizontalSnap(activeCenterY, centerY, rect.left, rect.left + rect.width)
-      }
+    canvas.getObjects().forEach(obj => {
+      if (obj === activeObj || obj.excludeFromExport) return
+      obj.setCoords()
+      const r = obj.getBoundingRect(true)
+      xTargets.push(r.left, r.left + r.width, r.left + r.width / 2)
+      yTargets.push(r.top, r.top + r.height, r.top + r.height / 2)
     })
 
-    // Apply Snap
-    // Logic: calculate delta needed to move activeObj to snap position
+    // 寻找最近的对齐点
+    let snapX = null, snapY = null
+    let minDiffX = guidelineOffset, minDiffY = guidelineOffset
+    let deltaX = 0, deltaY = 0
+
+    // 检测 X 轴
+    const currentXPoints = [activeRect.left, activeRect.left + activeRect.width, activeCenterX]
+    xTargets.forEach(targetX => {
+      currentXPoints.forEach(currentX => {
+        const diff = Math.abs(targetX - currentX)
+        if (diff < minDiffX) {
+          minDiffX = diff
+          snapX = targetX
+          deltaX = targetX - currentX
+        }
+      })
+    })
+
+    // 检测 Y 轴
+    const currentYPoints = [activeRect.top, activeRect.top + activeRect.height, activeCenterY]
+    yTargets.forEach(targetY => {
+      currentYPoints.forEach(currentY => {
+        const diff = Math.abs(targetY - currentY)
+        if (diff < minDiffY) {
+          minDiffY = diff
+          snapY = targetY
+          deltaY = targetY - currentY
+        }
+      })
+    })
+
+    // 关键修复点 2：在修改位置前，先清除 Fabric 的默认变换缓存
+    // 抖动往往是因为吸附逻辑修改了位置，但鼠标事件监听器下一帧又基于旧的缓存进行增量计算
     if (snapX !== null) {
-      // Find which part of activeObj matched snapX to shift correctly
-      // But simplifying: check which active edge matches snapX
-      let destLeft = activeRect.left
-      if (Math.abs(activeRect.left - snapX) < guidelineOffset) destLeft = snapX
-      else if (Math.abs((activeRect.left + activeRect.width) - snapX) < guidelineOffset) destLeft = snapX - activeRect.width
-      else if (Math.abs(activeCenterX - snapX) < guidelineOffset) destLeft = snapX - activeRect.width / 2
-      
-      activeObj.set({ left: destLeft + (activeObj.left - activeRect.left) }) // Adjust taking transform/origin into account
-      // More precise: activeObj.setPositionByOrigin(..., ...) but need to know which origin
-      // Simplest robust way: activeObj.left += (snapX - matchedValue)
+      activeObj.left = Math.round(activeObj.left + deltaX) // 使用 Math.round 防止像素舍入抖动
+      drawGuide(snapX, 0, snapX, canvasHeight)
+    }
+    if (snapY !== null) {
+      activeObj.top = Math.round(activeObj.top + deltaY)
+      drawGuide(0, snapY, canvasWidth, snapY)
     }
 
-    if (snapY !== null) {
-      let destTop = activeRect.top
-      if (Math.abs(activeRect.top - snapY) < guidelineOffset) destTop = snapY
-      else if (Math.abs((activeRect.top + activeRect.height) - snapY) < guidelineOffset) destTop = snapY - activeRect.height
-      else if (Math.abs(activeCenterY - snapY) < guidelineOffset) destTop = snapY - activeRect.height / 2
-      
-      activeObj.set({ top: destTop + (activeObj.top - activeRect.top) })
+    if (snapX !== null || snapY !== null) {
+      activeObj.setCoords()
+      // 关键修复点 3：确保在吸附状态下，画笔和交互层完全同步
+      canvas.requestRenderAll()
     }
   })
 
   canvas.on('mouse:up', () => {
+    const activeObj = canvas.getActiveObject()
+    if (activeObj) {
+      activeObj.hasControls = true
+      activeObj.hasBorders = true
+    }
+    clearGuidelines()
+    canvas.renderAll()
+  })
+
+  canvas.on('mouse:up', () => {
+    const activeObj = canvas.getActiveObject()
+    if (activeObj) {
+      activeObj.set({
+        hasControls: true,
+        hasBorders: true
+      })
+    }
     clearGuidelines()
     canvas.renderAll()
   })
