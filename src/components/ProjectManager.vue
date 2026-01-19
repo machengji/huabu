@@ -27,7 +27,7 @@
         </div>
 
         <div class="projects-grid">
-          <div v-for="project in projects" :key="project.objectId" class="project-card">
+          <div v-for="project in projects" :key="project.id" class="project-card">
             <div class="project-thumb" @click="handleLoadProject(project)">
               <img :src="formatThumbnail(project.thumbnail)" alt="thumbnail">
               <div class="project-overlay">
@@ -38,7 +38,7 @@
               <span class="project-name">{{ project.name }}</span>
               <div class="project-meta">
                  <span class="project-date">{{ formatDate(project.updatedAt || project.createdAt) }}</span>
-                 <button class="delete-btn" @click.stop="handleDeleteProject(project.objectId)">
+                 <button class="delete-btn" @click.stop="handleDeleteProject(project.id)">
                   <Trash2 :size="16" />
                 </button>
               </div>
