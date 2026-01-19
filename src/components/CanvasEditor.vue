@@ -207,7 +207,7 @@ onMounted(() => {
 
   const drawGuide = (x1, y1, x2, y2) => {
     const line = new fabric.Line([x1, y1, x2, y2], {
-      stroke: '#ff0077',
+      stroke: '#3b82f6', // 改为蓝色
       strokeWidth: 1,
       selectable: false,
       evented: false,
@@ -524,118 +524,55 @@ const updateObject = (obj, key, value) => {
 let imageCounter = 1
 let lastPlacedRect = null
 
-const addImage = async (url, customName = null) => {
+const addImage = async (url, customName = null, position = null) => {
+  // ... existing addImage code
+}
+
+const addVideo = async (url, customName = null) => {
   if (!canvas) return
   
-  // 1. 创建占位骨架屏 (Loading Placeholder)
-  const targetWidth = 200
-    const placeholderHeight = 150 // 默认高度
-    let posX = canvas.width / 2, posY = canvas.height / 2
-    
-    // 如果有最后放置的位置，则偏移放置
-    if (lastPlacedRect) {
-      posX = lastPlacedRect.left + 20
-      posY = lastPlacedRect.top + 20
-      if (posX + targetWidth / 2 > canvas.width - 50) {
-        posX = canvas.width / 2
-        posY = canvas.height / 2
-      }
-    }
+  const targetWidth = 300
+  const posX = canvas.width / 2
+  const posY = canvas.height / 2
 
-    // 使用 Rect 作为骨架图
-    const skeleton = new fabric.Rect({
-      left: posX,
-      top: posY,
-      width: targetWidth,
-      height: placeholderHeight,
-      fill: '#f1f5f9',
-      stroke: '#e2e8f0',
-      strokeWidth: 1,
-      rx: 8,
-      ry: 8,
-      originX: 'center',
-      originY: 'center',
-      name: '正在加载...',
-      selectable: false, // 加载中不可选中
-      evented: false    // 不响应事件
-    })
-    
-    // 添加一个简单的呼吸动画效果
-    const animateSkeleton = () => {
-      if (!skeleton.canvas) return
-      skeleton.animate({ opacity: skeleton.opacity === 0.5 ? 1 : 0.5 }, {
-        duration: 800,
-        onChange: () => canvas.requestRenderAll(),
-        onComplete: animateSkeleton
-      })
-    }
-    
-    canvas.add(skeleton)
-    canvas.requestRenderAll()
-    animateSkeleton()
+  // Create video element
+  const videoEl = document.createElement('video')
+  videoEl.src = url
+  videoEl.loop = true
+  videoEl.muted = true
+  videoEl.autoplay = true
+  videoEl.playsInline = true
+  
+  // Wait for video metadata to load
+  await new Promise((resolve) => {
+    videoEl.onloadedmetadata = resolve
+  })
 
-    try {
-      console.log('Starting image upload/load for:', url.substring(0, 50) + '...')
-      let finalUrl = url
-      
-      // Auto-upload to Cloud if it's a local Data URI or Blob URL
-      if (typeof url === 'string' && (url.startsWith('data:') || url.startsWith('blob:'))) {
-          try {
-              const res = await fetch(url)
-              const blob = await res.blob()
-              const ext = blob.type.split('/')[1] || 'png'
-              const filename = `img_${Date.now()}.${ext}`
-              finalUrl = await uploadFile(filename, blob)
-              console.log('Upload success, final URL:', finalUrl)
-          } catch (err) {
-              console.error('Failed to upload image to cloud, using local URL:', err)
-          }
-      }
+  const scale = targetWidth / videoEl.videoWidth
+  const name = customName || `视频 ${imageCounter++}`
 
-      console.log('Loading image from URL:', finalUrl)
-      const isDataUrl = finalUrl.startsWith('data:')
-      const img = await fabric.FabricImage.fromURL(finalUrl, { 
-        crossOrigin: isDataUrl ? null : 'anonymous' 
-      })
-      console.log('Image loaded successfully:', img.width, 'x', img.height)
-      
-      const scale = targetWidth / img.width
-      const scaledWidth = targetWidth
-      const scaledHeight = img.height * scale
-      
-      // 使用预设的名字
-      const name = customName || `图片 ${imageCounter++}`
-      
-      img.set({ 
-        left: skeleton.left, 
-        top: skeleton.top, 
-        originX: 'center', 
-        originY: 'center', 
-        scaleX: scale, 
-        scaleY: scale, 
-        name,
-        opacity: 0 // 先透明，淡入显示
-      })
+  const fabricVideo = new fabric.FabricImage(videoEl, {
+    left: posX,
+    top: posY,
+    originX: 'center',
+    originY: 'center',
+    scaleX: scale,
+    scaleY: scale,
+    name
+  })
 
-      // 替换骨架屏
-      canvas.remove(skeleton)
-      canvas.add(img)
-      canvas.setActiveObject(img)
-      
-      // 淡入动画
-      img.animate({ opacity: 1 }, {
-        duration: 300,
-        onChange: () => canvas.requestRenderAll()
-      })
-
-      lastPlacedRect = { left: img.left, top: img.top, width: scaledWidth, height: scaledHeight }
+  canvas.add(fabricVideo)
+  canvas.setActiveObject(fabricVideo)
+  
+  // Custom render loop for video
+  const renderVideo = () => {
+    if (fabricVideo.canvas) {
       canvas.requestRenderAll()
-    } catch (e) { 
-      console.error('Failed to add image', e)
-      canvas.remove(skeleton)
-      canvas.requestRenderAll()
+      fabric.util.requestAnimFrame(renderVideo)
     }
   }
+  fabric.util.requestAnimFrame(renderVideo)
+}
 
 const exportCanvas = () => canvas ? canvas.toDataURL({ format: 'png', quality: 1 }) : ''
 const getCanvasInstance = () => canvas
@@ -870,9 +807,100 @@ const clearCanvas = () => {
   }
 }
 
+const showAIGeneratorRect = (show, ratio = '3:4') => {
+  if (!canvas) return
+  
+  const [rw, rh] = ratio.split(':').map(Number)
+  const targetWidth = 300
+  const targetHeight = (targetWidth / rw) * rh
+  
+  // 查找现有矩形
+  const existingRect = canvas.getObjects().find(obj => obj.name === 'ai_gen_rect')
+  const existingIcon = canvas.getObjects().find(obj => obj.name === 'ai_gen_icon')
+  
+  if (!show) {
+    if (existingRect) canvas.remove(existingRect)
+    if (existingIcon) canvas.remove(existingIcon)
+    canvas.requestRenderAll()
+    return
+  }
+
+  if (existingRect) {
+    // 关键修复：切换比例时保持现有位置
+    existingRect.set({
+      width: targetWidth,
+      height: targetHeight
+    })
+    existingRect.setCoords()
+    if (existingIcon) {
+      existingIcon.set({ left: existingRect.left, top: existingRect.top })
+    }
+    canvas.setActiveObject(existingRect)
+  } else {
+    // 首次创建
+    const rect = new fabric.Rect({
+      left: canvas.width / 2,
+      top: canvas.height / 2,
+      width: targetWidth,
+      height: targetHeight,
+      fill: 'rgba(59, 130, 246, 0.1)',
+      stroke: '#3b82f6',
+      strokeWidth: 2,
+      cornerColor: '#ffffff',
+      cornerStrokeColor: '#3b82f6',
+      cornerSize: 8,
+      transparentCorners: false,
+      originX: 'center',
+      originY: 'center',
+      name: 'ai_gen_rect',
+      selectable: true,
+      excludeFromExport: true,
+      hasControls: true,
+      hasBorders: true,
+      lockScalingFlip: true,
+      // 关键修复：添加此属性，让 ObjectToolbar 知道这是一个 AI 参考框，不显示操作栏
+      isAIControl: true 
+    })
+    
+    const iconText = new fabric.Textbox('🖼️', {
+      left: canvas.width / 2,
+      top: canvas.height / 2,
+      fontSize: 40,
+      originX: 'center',
+      originY: 'center',
+      selectable: false,
+      evented: false,
+      excludeFromExport: true,
+      name: 'ai_gen_icon'
+    })
+
+    canvas.add(rect)
+    canvas.add(iconText)
+    canvas.setActiveObject(rect)
+    
+    const syncIcon = () => {
+      iconText.set({ left: rect.left, top: rect.top })
+      canvas.requestRenderAll()
+    }
+    rect.on('moving', syncIcon)
+    rect.on('scaling', syncIcon)
+  }
+
+  canvas.requestRenderAll()
+}
+
+const removeAIGeneratorRect = () => {
+  if (!canvas) return
+  const objects = canvas.getObjects()
+  const toRemove = objects.filter(obj => obj.name === 'ai_gen_rect' || obj.name === 'ai_gen_icon')
+  toRemove.forEach(obj => canvas.remove(obj))
+  canvas.requestRenderAll()
+}
+
 defineExpose({
-  addToolElement, generatePoster: () => {}, updateSelectedObject, addImage, exportCanvas,
-  getCanvasInstance, getCanvasState, loadFromJSON, deleteSelectedObject, locateObject, updateObject, removeObject, rotateSelectedObject, startRotatingObject, clearCanvas
+  addToolElement, generatePoster: () => {}, updateSelectedObject, addImage, addVideo, exportCanvas,
+  getCanvasInstance, getCanvasState, loadFromJSON, deleteSelectedObject, locateObject, updateObject, removeObject, rotateSelectedObject, startRotatingObject, clearCanvas,
+  showAIGeneratorRect, removeAIGeneratorRect
 })
 </script>
 

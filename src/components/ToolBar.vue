@@ -32,6 +32,10 @@
             <Video :size="18" />
             <span>上传视频</span>
           </button>
+          <button class="popup-item" @click="handleAction('ai-generator')">
+            <Sparkles :size="18" />
+            <span>图像生成器</span>
+          </button>
           <button class="popup-item" @click="handleAction('ai-canvas')">
             <Hash :size="18" />
             <span>智能画板</span>
@@ -116,7 +120,7 @@ import { ref } from 'vue'
 import { 
   MousePointer2, Plus, Square, Circle, Triangle, Star, 
   Type, Pencil, LayoutGrid, Share2, Image as ImageIcon, 
-  Video, Hash, MessageSquare, ArrowLeft, ArrowRight 
+  Video, Hash, MessageSquare, ArrowLeft, ArrowRight, Sparkles 
 } from 'lucide-vue-next'
 
 const emit = defineEmits(['tool-click', 'action'])

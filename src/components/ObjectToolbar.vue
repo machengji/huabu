@@ -1,6 +1,6 @@
 <template>
   <div 
-    v-if="selectedObject" 
+    v-if="selectedObject && !selectedObject.isAIControl" 
     class="object-toolbar glass-panel"
     :style="toolbarStyle"
   >

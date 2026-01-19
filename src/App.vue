@@ -45,8 +45,8 @@
           :zoom="zoom"
           @selection-change="handleSelectionChange"
           @zoom-change="zoom = $event"
-          @interaction-start="isInteracting = true"
-          @interaction-end="isInteracting = false"
+          @interaction-start="handleCanvasInteractionStart"
+          @interaction-end="handleCanvasInteractionEnd"
           @content-change="handleContentChange"
         />
       </div>
@@ -64,6 +64,14 @@
       <AIPanel 
         v-model="showAIPanel"
         @generate="handleGenerate"
+      />
+
+      <AIGenerator 
+        :show="showAIGenerator"
+        :style="aiGeneratorPosition"
+        @close="handleAIGeneratorClose"
+        @generate="handleAIGenerate"
+        @ratio-change="r => canvasRef.showAIGeneratorRect(true, r)"
       />
     </div>
 
@@ -86,6 +94,15 @@
       multiple
       @change="handleImageUpload"
     >
+
+    <!-- Hidden File Input for Video Upload -->
+    <input 
+      type="file" 
+      ref="videoInput" 
+      style="display: none" 
+      accept="video/*" 
+      @change="handleVideoUpload"
+    >
     
     <LoginModal v-if="showLogin" @success="handleLoginSuccess" />
   </div>
@@ -99,6 +116,7 @@ import CanvasEditor from './components/CanvasEditor.vue'
 import ObjectToolbar from './components/ObjectToolbar.vue'
 import ProjectManager from './components/ProjectManager.vue'
 import AIPanel from './components/AIPanel.vue'
+import AIGenerator from './components/AIGenerator.vue'
 import LoginModal from './components/LoginModal.vue'
 
 import { generateImage } from './services/minimax'
@@ -112,10 +130,12 @@ const zoom = ref(1)
 const canvasRef = ref(null)
 const selectedObject = ref(null)
 const fileInput = ref(null)
+const videoInput = ref(null)
 const isInteracting = ref(false)
 
 const showProjectManager = ref(false)
 const showAIPanel = ref(false)
+const showAIGenerator = ref(false)
 const showLogin = ref(false)
 const currentProject = ref(null)
 
@@ -162,8 +182,17 @@ const handleAction = (action) => {
       case 'upload-image':
         fileInput.value.click()
         break
+      case 'upload-video':
+        videoInput.value.click()
+        break
       case 'ai-canvas':
         showAIPanel.value = true
+        break
+      case 'ai-generator':
+        showAIGenerator.value = true
+        canvasRef.value.showAIGeneratorRect(true)
+        // 初始位置设置在参考框下方
+        setTimeout(handleCanvasInteractionEnd, 50)
         break
       case 'export':
         handleExport()
@@ -177,22 +206,19 @@ const handleAction = (action) => {
 }
 
 const handleImageUpload = async (e) => {
-  const files = Array.from(e.target.files)
-  if (files.length > 0 && canvasRef.value) {
-    for (const file of files) {
-      await new Promise((resolve) => {
-        const reader = new FileReader()
-        reader.onload = async (f) => {
-          // Use filename (without extension) as the object name
-          const name = file.name.replace(/\.[^/.]+$/, "")
-          await canvasRef.value.addImage(f.target.result, name)
-          resolve()
-        }
-        reader.readAsDataURL(file)
-      })
+  // ... existing handleImageUpload
+}
+
+const handleVideoUpload = async (e) => {
+  const file = e.target.files[0]
+  if (file && canvasRef.value) {
+    const reader = new FileReader()
+    reader.onload = async (f) => {
+      const name = file.name.replace(/\.[^/.]+$/, "")
+      await canvasRef.value.addVideo(f.target.result, name)
     }
+    reader.readAsDataURL(file)
   }
-  // Reset input
   e.target.value = ''
 }
 
@@ -200,7 +226,7 @@ const handleSelectionChange = (obj) => {
   selectedObject.value = obj
 }
 
-const handleGenerate = async ({ prompt, apiKey, secretKey, model }) => {
+const handleGenerate = async ({ prompt, apiKey, secretKey, model, pos }) => {
   if (canvasRef.value) {
     try {
       isInteracting.value = true
@@ -221,13 +247,102 @@ const handleGenerate = async ({ prompt, apiKey, secretKey, model }) => {
       if (imageUrl) {
         // Use truncated prompt as name for AI images
         const aiName = `AI: ${prompt.slice(0, 8)}...`
-        await canvasRef.value.addImage(imageUrl, aiName)
+        await canvasRef.value.addImage(imageUrl, aiName, pos)
       }
     } catch (error) {
       console.error('AI Generation Error:', error)
       alert(`生成失败: ${error.message}`)
     } finally {
       isInteracting.value = false
+    }
+  }
+}
+
+const handleAIGenerate = async (config) => {
+  console.log('AI Generate Config:', config)
+  
+  const model = config.model === 'nano-banana-pro' ? 'minimax' : config.model
+  const apiKey = localStorage.getItem(`${model}_api_key`)
+  const secretKey = localStorage.getItem(`${model}_secret_key`)
+
+  if (!apiKey) {
+    alert(`请先在 AI 助手的设置中配置 ${model} 的 API Key`)
+    showAIPanel.value = true
+    return
+  }
+
+  // Get current AI rect position and size if exists
+  const canvas = canvasRef.value.getCanvasInstance()
+  const aiRect = canvas.getObjects().find(obj => obj.name === 'ai_gen_rect')
+  const pos = aiRect ? { left: aiRect.left, top: aiRect.top, width: aiRect.getScaledWidth(), height: aiRect.getScaledHeight() } : null
+
+  await handleGenerate({
+    prompt: config.prompt,
+    apiKey,
+    secretKey,
+    model,
+    pos // Pass position to handleGenerate
+  })
+  
+  showAIGenerator.value = false
+  canvasRef.value.removeAIGeneratorRect()
+}
+
+const handleAIGeneratorClose = () => {
+  showAIGenerator.value = false
+  if (canvasRef.value) {
+    canvasRef.value.removeAIGeneratorRect()
+  }
+}
+
+const aiGeneratorPosition = ref({ left: '50%', top: 'auto', bottom: '40px' })
+
+const handleCanvasInteractionStart = () => {
+  isInteracting.value = true
+  if (showAIGenerator.value) {
+    // 拖动时隐藏面板
+    aiGeneratorPosition.value = { ...aiGeneratorPosition.value, display: 'none' }
+  }
+}
+
+const handleCanvasInteractionEnd = () => {
+  isInteracting.value = false
+  if (showAIGenerator.value && canvasRef.value) {
+    const canvas = canvasRef.value.getCanvasInstance()
+    const aiRect = canvas.getObjects().find(obj => obj.name === 'ai_gen_rect')
+    if (aiRect) {
+      aiRect.setCoords() 
+      const boundingRect = aiRect.getBoundingRect()
+      const zoom = canvas.getZoom()
+      const vpt = canvas.viewportTransform
+      
+      const screenLeft = boundingRect.left * zoom + vpt[4]
+      const screenTop = boundingRect.top * zoom + vpt[5]
+      const screenWidth = boundingRect.width * zoom
+      const screenHeight = boundingRect.height * zoom
+      
+      const screenCenterX = screenLeft + screenWidth / 2
+      const screenBottomY = screenTop + screenHeight
+      
+      // 始终显示在下方，但如果超出画布底部，则向上偏移直到贴合画布底部
+      const panelHeight = 180 
+      const canvasHeight = canvas.height
+      const margin = 20
+      
+      let finalTop = screenBottomY + margin
+      
+      // 检查是否超出画布底部
+      if (finalTop + panelHeight > canvasHeight - 20) {
+        // 如果超出，则强制固定在画布底部向上一点的位置，并覆盖在参考框末尾
+        finalTop = canvasHeight - panelHeight - 20
+      }
+
+      aiGeneratorPosition.value = {
+        left: `${screenCenterX}px`,
+        top: `${finalTop}px`,
+        bottom: 'auto',
+        display: 'block'
+      }
     }
   }
 }
