@@ -752,7 +752,32 @@ const removeObject = (obj) => {
 const loadFromJSON = async (json) => {
   if (!canvas) return
   try {
+    // 1. 显示画布加载状态 (全屏或覆盖层)
+    // 这里我们简单清空画布并添加一个全屏加载指示器，或者使用之前的 skeleton 逻辑
+    const centerX = canvas.width / 2
+    const centerY = canvas.height / 2
+    
+    const loadingText = new fabric.Textbox('正在加载画布...', {
+      left: centerX,
+      top: centerY,
+      originX: 'center',
+      originY: 'center',
+      fontSize: 20,
+      fill: '#94a3b8',
+      selectable: false,
+      evented: false,
+      name: 'temp_loading'
+    })
+    
+    canvas.clear()
+    canvas.backgroundColor = 'transparent'
+    canvas.add(loadingText)
+    canvas.renderAll()
+
+    // 2. 加载数据
     await canvas.loadFromJSON(json)
+    
+    // 3. 恢复后的处理
     const images = canvas.getObjects('image')
     if (images.length > 0) {
       const maxNum = Math.max(...images.map(img => {
@@ -761,8 +786,17 @@ const loadFromJSON = async (json) => {
       }))
       imageCounter = maxNum + 1
     }
+    
+    // 确保自定义控制点被重新应用到加载的对象上
+    canvas.getObjects().forEach(applyCustomControls)
+    
     canvas.renderAll()
-  } catch (e) { console.error('Failed to load project:', e) }
+  } catch (e) { 
+    console.error('Failed to load project:', e)
+    canvas.clear()
+    canvas.backgroundColor = 'transparent'
+    canvas.renderAll()
+  }
 }
 
 const clearCanvas = () => {
