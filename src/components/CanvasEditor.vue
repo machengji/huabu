@@ -752,29 +752,47 @@ const removeObject = (obj) => {
 const loadFromJSON = async (json) => {
   if (!canvas) return
   try {
-    // 1. 显示画布加载状态 (全屏或覆盖层)
-    // 这里我们简单清空画布并添加一个全屏加载指示器，或者使用之前的 skeleton 逻辑
+    // 1. 显示加载状态 (转圈圈模拟)
     const centerX = canvas.width / 2
     const centerY = canvas.height / 2
     
-    const loadingText = new fabric.Textbox('正在加载画布...', {
+    // 创建一个简单的转圈圈 (Loading Spinner)
+    const spinner = new fabric.Circle({
       left: centerX,
       top: centerY,
+      radius: 15,
+      fill: 'transparent',
+      stroke: '#3b82f6',
+      strokeWidth: 3,
+      strokeDashArray: [20, 40],
       originX: 'center',
       originY: 'center',
-      fontSize: 20,
-      fill: '#94a3b8',
       selectable: false,
       evented: false,
-      name: 'temp_loading'
+      name: 'temp_spinner'
     })
     
     canvas.clear()
     canvas.backgroundColor = 'transparent'
-    canvas.add(loadingText)
-    canvas.renderAll()
+    canvas.add(spinner)
+    
+    // 旋转动画
+    const animateSpinner = () => {
+      if (!spinner.canvas) return
+      spinner.animate({ angle: 360 }, {
+        duration: 1000,
+        onChange: () => canvas.requestRenderAll(),
+        onComplete: () => {
+          spinner.angle = 0
+          animateSpinner()
+        }
+      })
+    }
+    animateSpinner()
+    canvas.requestRenderAll()
 
     // 2. 加载数据
+    // 注意：loadFromJSON 在 Fabric v6/v7 中返回 Promise
     await canvas.loadFromJSON(json)
     
     // 3. 恢复后的处理
@@ -787,8 +805,12 @@ const loadFromJSON = async (json) => {
       imageCounter = maxNum + 1
     }
     
-    // 确保自定义控制点被重新应用到加载的对象上
-    canvas.getObjects().forEach(applyCustomControls)
+    // 确保所有加载的对象都应用了自定义控制点
+    canvas.getObjects().forEach(obj => {
+      if (obj.name !== 'temp_spinner') {
+        applyCustomControls(obj)
+      }
+    })
     
     canvas.renderAll()
   } catch (e) { 
