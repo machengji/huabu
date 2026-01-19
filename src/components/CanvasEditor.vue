@@ -752,11 +752,10 @@ const removeObject = (obj) => {
 const loadFromJSON = async (json) => {
   if (!canvas) return
   try {
-    // 1. 显示加载状态 (转圈圈模拟)
+    // 1. 创建转圈圈 (Loading Spinner)
     const centerX = canvas.width / 2
     const centerY = canvas.height / 2
     
-    // 创建一个简单的转圈圈 (Loading Spinner)
     const spinner = new fabric.Circle({
       left: centerX,
       top: centerY,
@@ -769,14 +768,16 @@ const loadFromJSON = async (json) => {
       originY: 'center',
       selectable: false,
       evented: false,
-      name: 'temp_spinner'
+      name: 'temp_spinner',
+      opacity: 0.8,
+      excludeFromExport: true // 确保导出时不包含它
     })
     
-    canvas.clear()
-    canvas.backgroundColor = 'transparent'
+    // 不要调用 canvas.clear()! 
+    // 直接添加 spinner 并渲染
     canvas.add(spinner)
+    canvas.setActiveObject(spinner) // 可选：让它保持在顶层
     
-    // 旋转动画
     const animateSpinner = () => {
       if (!spinner.canvas) return
       spinner.animate({ angle: 360 }, {
@@ -791,8 +792,7 @@ const loadFromJSON = async (json) => {
     animateSpinner()
     canvas.requestRenderAll()
 
-    // 2. 加载数据
-    // 注意：loadFromJSON 在 Fabric v6/v7 中返回 Promise
+    // 2. 加载数据 (Fabric 会自动清空当前画布并载入新数据)
     await canvas.loadFromJSON(json)
     
     // 3. 恢复后的处理
@@ -805,18 +805,12 @@ const loadFromJSON = async (json) => {
       imageCounter = maxNum + 1
     }
     
-    // 确保所有加载的对象都应用了自定义控制点
-    canvas.getObjects().forEach(obj => {
-      if (obj.name !== 'temp_spinner') {
-        applyCustomControls(obj)
-      }
-    })
+    // 重新应用所有对象的控制点
+    canvas.getObjects().forEach(applyCustomControls)
     
     canvas.renderAll()
   } catch (e) { 
     console.error('Failed to load project:', e)
-    canvas.clear()
-    canvas.backgroundColor = 'transparent'
     canvas.renderAll()
   }
 }
